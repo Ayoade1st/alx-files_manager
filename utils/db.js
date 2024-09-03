@@ -1,55 +1,132 @@
-import { MongoClient } from 'mongodb';
+import mongoDBCore from 'mongodb/lib/core';
 
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_PORT = process.env.DB_PORT || 27017;
-const DB_DATABASE = process.env.DB_DATABASE || 'files_manager';
-const url = `mongodb://${DB_HOST}:${DB_PORT}`;
+const { MongoClient } = require('mongodb');
 
 /**
- * Class for performing operations with Mongo service
+ * MongoDB client class.
+ * @class DBClient
+ * @property {object} db - The MongoDB client.
+ * @method {boolean} isAlive - Checks if the MongoDB client is connected to the server.
+ * @method {Promise} nbUsers - Returns the number of documents in the collection users.
+ * @method {Promise} nbFiles - Returns the number of documents in the collection files.
  */
+
 class DBClient {
+  /**
+   * Creates a new DBClient instance.
+   */
   constructor() {
-    MongoClient.connect(url, { useUnifiedTopology: true }, (err, client) => {
+    const host = process.env.DB_HOST || 'localhost';
+    const port = process.env.DB_PORT || 27017;
+    const database = process.env.DB_DATABASE || 'files_manager';
+    const uri = `mongodb://${host}:${port}/${database}`;
+
+    this.client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+
+    this.client.connect((err) => {
       if (!err) {
-        // console.log('Connected successfully to server');
-        this.db = client.db(DB_DATABASE);
-        this.usersCollection = this.db.collection('users');
-        this.filesCollection = this.db.collection('files');
+        // console.log(`Connected to MongoDB at ${host}:${port}/${database}`);
+        this.dbAlive = true;
       } else {
-        console.log(err.message);
-        this.db = false;
+        console.error(err.message);
+        this.dbAlive = false;
       }
     });
   }
 
   /**
-   * Checks if connection to Redis is Alive
-   * @return {boolean} true if connection alive or false if not
+   * Checks if the MongoDB client is connected to the server.
+   * @returns {boolean} true if connected, false otherwise.
    */
   isAlive() {
-    return !!this.db;
+    return !!this.dbAlive;
   }
 
   /**
-   * Returns the number of documents in the collection users
-   * @return {number} amount of users
+   * Returns the number of documents in the collection users.
+   * @returns {Promise<number>} The number of documents in the collection users.
    */
   async nbUsers() {
-    const numberOfUsers = this.usersCollection.countDocuments();
-    return numberOfUsers;
+    return this.client.db().collection('users').countDocuments();
   }
 
   /**
-   * Returns the number of documents in the collection files
-   * @return {number} amount of files
+   * Returns the number of documents in the collection files.
+   * @returns {Promise<number>} The number of documents in the collection files.
    */
   async nbFiles() {
-    const numberOfFiles = this.filesCollection.countDocuments();
-    return numberOfFiles;
+    return this.client.db().collection('files').countDocuments();
+  }
+
+  /**
+   * Retrieves a reference to the `users` collection.
+   * @returns {Promise<Collection>}
+   */
+  async usersCollection() {
+    return this.client.db().collection('users');
+  }
+
+  /**
+   * Retrieves a user by their email.
+   * @param {string} email - The user's email.
+   * @returns {Promise<Document>} The user document.
+   */
+  async findUserByEmail(email) {
+    const usersCollection = await this.usersCollection();
+    return usersCollection.findOne({ email });
+  }
+
+  /**
+   * Retrieves a user by their ID.
+   * @param {string} userId - The user's ID.
+   * @returns {Promise<Document>} The user document.
+   */
+  async findUserById(userId) {
+    const usersCollection = await this.usersCollection();
+    return usersCollection.findOne({ _id: new mongoDBCore.BSON.ObjectId(userId) });
+  }
+
+  /**
+   * Retrieves a reference to the `files` collection.
+   * @returns {Promise<Collection>}
+   */
+  async filesCollection() {
+    return this.client.db().collection('files');
+  }
+
+  /**
+   * Retrives a file by their ID.
+   * @param {string} fileId - The file's ID.
+   * @return {Promise<Document>} The file document.
+   */
+  async getFileById(fileId) {
+    const filesCollection = await this.filesCollection();
+    return filesCollection.findOne({ _id: new mongoDBCore.BSON.ObjectId(fileId) });
+  }
+
+  /**
+   * Retrives a file by their ID and User ID.
+   * @param {string} fileId - The file's ID.
+   * @return {Promise<Document>} The file document.
+   */
+  async getFileByIdAndUserId(fileId, userId) {
+    const filesCollection = await this.filesCollection();
+    return filesCollection.findOne({
+      _id: new mongoDBCore.BSON.ObjectId(fileId),
+      userId: new mongoDBCore.BSON.ObjectId(userId),
+    });
+  }
+
+  /**
+   * Retrives all files by their Parent ID and User ID.
+   * @param {string} queryParam - The query parameter.
+   * @return {Promise<Document[]>} The file document.
+   */
+  async getFilesByQueryFilters(pipeline) {
+    const filesCollection = await this.filesCollection();
+    return filesCollection.aggregate(pipeline).toArray();
   }
 }
 
 const dbClient = new DBClient();
-
-export default dbClient;
+module.exports = dbClient;
